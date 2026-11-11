@@ -4,6 +4,9 @@
 // Components V2 is sent as raw JSON over the REST API, so it does not depend
 // on serenity having builders for it.
 
+use std::future::Future;
+use std::time::Instant;
+
 use serde_json::json;
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -13,6 +16,17 @@ use serenity::prelude::*;
 const REACT_WORD: &str = "pizza"; // reacts with a pizza emoji
 const REACT_EMOJI: char = '🍕';
 const EMBED_WORD: &str = "embed"; // replies with a Components V2 container
+
+// Awaits a future and logs how long it took, whatever the result.
+async fn timed<T>(label: &str, fut: impl Future<Output = T>) -> T {
+    let start = Instant::now();
+    let out = fut.await;
+    println!(
+        "[timing] {label} took {:.1} ms",
+        start.elapsed().as_secs_f64() * 1000.0
+    );
+    out
+}
 
 struct Handler {
     http: reqwest::Client,
@@ -35,25 +49,29 @@ impl EventHandler for Handler {
         // Basic commands
         match text.trim() {
             "!ping" => {
-                let _ = msg.reply(&ctx.http, "Pong!").await;
+                let _ = timed("!ping reply", msg.reply(&ctx.http, "Pong!")).await;
                 return;
             }
             "!hello" => {
-                let _ = msg
-                    .reply(&ctx.http, format!("Hello, {}!", msg.author.name))
-                    .await;
+                let _ = timed(
+                    "!hello reply",
+                    msg.reply(&ctx.http, format!("Hello, {}!", msg.author.name)),
+                )
+                .await;
                 return;
             }
             "!help" => {
-                let _ = msg
-                    .reply(
+                let _ = timed(
+                    "!help reply",
+                    msg.reply(
                         &ctx.http,
                         format!(
                             "Commands: `!ping`, `!hello`, `!help`\n\
                              Say \"{REACT_WORD}\" and I react. Say \"{EMBED_WORD}\" and I send a Components V2 message."
                         ),
-                    )
-                    .await;
+                    ),
+                )
+                .await;
                 return;
             }
             _ => {}
@@ -61,7 +79,7 @@ impl EventHandler for Handler {
 
         // React if the word is in the message
         if text.contains(REACT_WORD) {
-            if let Err(e) = msg.react(&ctx.http, REACT_EMOJI).await {
+            if let Err(e) = timed("reaction", msg.react(&ctx.http, REACT_EMOJI)).await {
                 eprintln!("react failed: {e}");
             }
         }
@@ -83,14 +101,17 @@ impl EventHandler for Handler {
             });
 
             let url = format!("https://discord.com/api/v10/channels/{}/messages", msg.channel_id);
-            match self
-                .http
-                .post(url)
-                .header("Authorization", format!("Bot {}", self.token))
-                .json(&body)
-                .send()
-                .await
-            {
+            let res = timed(
+                "components v2 send",
+                self.http
+                    .post(url)
+                    .header("Authorization", format!("Bot {}", self.token))
+                    .json(&body)
+                    .send(),
+            )
+            .await;
+
+            match res {
                 Ok(r) if !r.status().is_success() => {
                     eprintln!("components v2 send failed: {}", r.status());
                 }
