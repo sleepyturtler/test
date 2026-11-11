@@ -1,0 +1,12 @@
+{
+  "name": "simple-bot",
+  "version": "0.1.0",
+  "private": true,
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.0"
+  }
+}
